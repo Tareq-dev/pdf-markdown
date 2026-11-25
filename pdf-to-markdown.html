@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF → Markdown টুল</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--ink:#1b2333;--muted:#6a7488;--line:#e3e8f2;--brand:#3b5bdb;--brand-d:#2f49b3;--ok:#12805c;--warn:#b45309;--bad:#c92a2a;--radius:14px}
+[hidden]{display:none !important}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Noto Sans Bengali',system-ui,-apple-system,'Segoe UI',sans-serif;line-height:1.6}
+header{background:linear-gradient(135deg,#3b5bdb,#5f3dc4);color:#fff;padding:28px 20px 56px}
+header h1{margin:0 auto;max-width:980px;font-size:1.6rem}
+header p{margin:6px auto 0;max-width:980px;opacity:.9;font-size:.95rem}
+main{max-width:980px;margin:-34px auto 40px;padding:0 16px;display:grid;gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;box-shadow:0 2px 10px rgba(30,40,80,.05)}
+.card h2{margin:0 0 12px;font-size:1.08rem;display:flex;align-items:center;gap:10px}
+.num{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--brand);color:#fff;font-size:.85rem;font-weight:700}
+.drop{border:2px dashed #b8c3e6;border-radius:12px;padding:26px;text-align:center;cursor:pointer;background:#f8faff;transition:.15s}
+.drop:hover,.drop.on{border-color:var(--brand);background:#eef2ff}
+.drop b{color:var(--brand)}
+.muted{color:var(--muted);font-size:.88rem}
+.note{background:#f3f6ff;border:1px solid #d8e0fa;border-radius:10px;padding:10px 12px;font-size:.88rem;margin:0 0 12px}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+.field{display:flex;flex-direction:column;gap:4px;min-width:130px;flex:1}
+.field label{font-size:.84rem;color:var(--muted);font-weight:500}
+input[type=number],input[type=text],select,textarea{font:inherit;padding:8px 10px;border:1px solid #cfd6e8;border-radius:9px;background:#fff;color:var(--ink);width:100%}
+textarea{min-height:320px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9rem;margin-top:10px;resize:vertical}
+input:focus,select:focus,textarea:focus{outline:2px solid #c5d0ff;border-color:var(--brand)}
+input[type=range]{width:100%}
+button{font:inherit;cursor:pointer;border:0;border-radius:9px;padding:8px 14px;font-weight:600;background:var(--brand);color:#fff;transition:.12s}
+button:hover:not(:disabled){background:var(--brand-d)}
+button.ghost{background:#eef1fb;color:var(--brand)}
+button.ghost:hover:not(:disabled){background:#e0e6fa}
+button.stop{background:var(--bad)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.chk{display:flex;align-items:center;gap:8px;font-size:.92rem}
+.chk input{width:18px;height:18px}
+details.acc{border:1px solid var(--line);border-radius:10px;background:#fbfcff;margin-top:12px}
+details.acc>summary{cursor:pointer;font-weight:600;list-style:none;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;user-select:none}
+details.acc>summary::-webkit-details-marker{display:none}
+details.acc>summary::after{content:'▾';color:var(--muted);transition:transform .15s;display:inline-block}
+details.acc[open]>summary::after{transform:rotate(180deg)}
+details.acc>.acc-body{padding:0 14px 14px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:4px}
+.bar{height:10px;background:#e6eaf6;border-radius:99px;overflow:hidden;margin-top:12px}
+.bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#3b5bdb,#7048e8);transition:width .2s}
+#status{margin-top:8px;font-size:.9rem;color:var(--muted);min-height:1.4em}
+table{width:100%;border-collapse:collapse;font-size:.92rem;margin-top:10px}
+th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line)}
+th{font-size:.8rem;color:var(--muted);font-weight:600}
+.pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:.78rem;font-weight:600;background:#eef1fb;color:var(--brand)}
+.pill.ok{background:#e3f6ee;color:var(--ok)}
+.pill.ocr{background:#fff3dd;color:var(--warn)}
+.pill.empty{background:#ffe3e3;color:var(--bad)}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+#prev{display:none;border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:10px;min-height:320px;background:#fff;overflow:auto;line-height:1.8}
+#prev table{font-size:.95rem}
+#prev td,#prev th{border:1px solid var(--line)}
+footer{max-width:980px;margin:0 auto 40px;padding:0 16px;color:var(--muted);font-size:.84rem}
+html{-webkit-text-size-adjust:100%}
+@media(max-width:640px){
+  header{padding:22px 16px 48px}
+  header h1{font-size:1.3rem}
+  header p{font-size:.88rem}
+  main{margin-top:-28px;padding:0 10px;gap:12px}
+  .card{padding:14px}
+  .card h2{font-size:1rem}
+  .grid2{grid-template-columns:1fr}
+  .row{gap:10px}
+  .field{min-width:0;flex:1 1 100%}
+  .row button,.tabs button{flex:1 1 auto;padding:11px 12px;min-height:44px}
+  .tabs{gap:8px}
+  .chk{font-size:.9rem;min-height:32px}
+  input[type=number],input[type=text],select,textarea{font-size:16px}
+  textarea{min-height:220px;font-size:16px}
+  #prev{min-height:200px;padding:12px}
+  .drop{padding:18px 12px}
+  .note,.muted{font-size:.84rem}
+  details.acc>summary{padding:12px 14px;min-height:44px}
+  table{font-size:.85rem}
+  th,td{padding:6px 4px}
+  footer{font-size:.8rem;padding:0 10px}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>PDF → Markdown টুল</h1>
+  <p>PDF আপলোড করুন, পেজ ও ভাগ ঠিক করুন, তারপর Markdown (.md) নামিয়ে নিন। ডিজিটাল PDF-এর লেখা সরাসরি পড়া হয়; স্ক্যান করা পেজে OCR চলে। সবকিছু আপনার ব্রাউজারেই চলে, PDF কোথাও আপলোড হয় না।</p>
+</header>
+
+<main>
+  <section class="card">
+    <h2><span class="num">১</span> PDF বাছুন</h2>
+    <div class="drop" id="drop">
+      <div><b>এখানে PDF ফেলুন</b> বা ক্লিক করে বাছুন</div>
+      <div class="muted" id="fileinfo">এখনো কোনো ফাইল বাছা হয়নি</div>
+    </div>
+    <input type="file" id="file" accept="application/pdf" hidden>
+    <div class="muted" style="margin-top:8px">বাছা PDF, সেটিং ও রূপান্তরের ফল এই ব্রাউজারে সেভ থাকে — রিফ্রেশ করলেও ফিরে আসবে।</div>
+  </section>
+
+  <section class="card">
+    <h2><span class="num">২</span> পেজ ও আউটপুট</h2>
+    <div class="row">
+      <div class="field"><label>শুরু পেজ</label><input type="number" id="from" min="1" value="1"></div>
+      <div class="field"><label>শেষ পেজ</label><input type="number" id="to" min="1" value="1"></div>
+      <div class="field"><label>প্রতি ফাইলে কত পেজ (0 = একটি ফাইল)</label><input type="number" id="chunk" min="0" value="0"></div>
+      <div class="field"><label>পেজের আলাদা করার চিহ্ন</label>
+        <select id="sep">
+          <option value="comment" selected>HTML কমেন্ট &lt;!-- পৃষ্ঠা N --&gt;</option>
+          <option value="heading">শিরোনাম (## পৃষ্ঠা N)</option>
+          <option value="hr">অনুভূমিক রেখা (---)</option>
+          <option value="none">কিছু না</option>
+        </select></div>
+      <div class="field"><label>ফাইলের নামের শুরু (ঐচ্ছিক)</label><input type="text" id="prefix" placeholder="যেমন: Bio1_Ch01"></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label class="chk"><input type="checkbox" id="fm" checked> YAML ফ্রন্ট ম্যাটার যোগ করুন</label>
+      <label class="chk"><input type="checkbox" id="bom"> UTF-8 BOM (Windows Notepad-এর জন্য)</label>
+    </div>
+    <details class="acc" name="cfg">
+      <summary>নিষ্কাশন সেটিং (লেখা কীভাবে পড়বে)</summary>
+      <div class="acc-body">
+        <div class="grid2">
+          <div class="field"><label>উৎস</label>
+            <select id="engine">
+              <option value="auto" selected>স্বয়ংক্রিয় (ডিজিটাল পেজে টেক্সট, স্ক্যানে OCR)</option>
+              <option value="text">শুধু ডিজিটাল টেক্সট (OCR নয়)</option>
+              <option value="ocr">সব পেজে OCR (জোর করে)</option>
+            </select></div>
+          <div class="field"><label>কলাম</label>
+            <select id="columns">
+              <option value="auto" selected>স্বয়ংক্রিয়</option>
+              <option value="single">এক কলাম</option>
+              <option value="two">দুই কলাম</option>
+            </select></div>
+          <div class="field"><label>হেডিং শনাক্তকরণ</label>
+            <select id="sens">
+              <option value="low">কম (শুধু বড় শিরোনাম)</option>
+              <option value="med" selected>মাঝারি</option>
+              <option value="high">বেশি (ছোট শিরোনামও)</option>
+            </select></div>
+          <div class="field"><label>সংখ্যা</label>
+            <select id="digits">
+              <option value="bn" selected>মূল (বাংলা সংখ্যা থাকবে)</option>
+              <option value="en">ইংরেজি সংখ্যায় বদলান</option>
+            </select></div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <label class="chk"><input type="checkbox" id="hf" checked> বারবার আসা হেডার/ফুটার মুছুন</label>
+          <label class="chk"><input type="checkbox" id="pnum" checked> পেজ নম্বর মুছুন</label>
+          <label class="chk"><input type="checkbox" id="hyph" checked> লাইনের শেষের হাইফেন জোড়া লাগান</label>
+          <label class="chk"><input type="checkbox" id="tables" checked> টেবিল শনাক্ত করুন</label>
+          <label class="chk"><input type="checkbox" id="lists" checked> তালিকা (•, ১., ২.) শনাক্ত করুন</label>
+          <label class="chk"><input type="checkbox" id="emph" checked> বোল্ড ও ইতালিক চিহ্নিত করুন</label>
+          <label class="chk"><input type="checkbox" id="supsub" checked> সুপারস্ক্রিপ্ট/সাবস্ক্রিপ্ট (&lt;sup&gt;, &lt;sub&gt;)</label>
+        </div>
+      </div>
+    </details>
+
+    <details class="acc" name="cfg">
+      <summary>OCR সেটিং (স্ক্যান করা পেজের জন্য)</summary>
+      <div class="acc-body">
+        <div class="grid2">
+          <div class="field"><label>ভাষা</label>
+            <select id="lang">
+              <option value="ben" selected>বাংলা</option>
+              <option value="ben+eng">বাংলা + ইংরেজি</option>
+              <option value="eng">ইংরেজি</option>
+            </select></div>
+          <div class="field"><label>ভাষা-ডেটার মান</label>
+            <select id="quality">
+              <option value="best" selected>সেরা (ধীর, বেশি নির্ভুল)</option>
+              <option value="std">স্ট্যান্ডার্ড</option>
+            </select></div>
+          <div class="field"><label>রেন্ডার মান</label>
+            <select id="scale">
+              <option value="2">সাধারণ</option>
+              <option value="3" selected>ভালো</option>
+              <option value="4">সর্বোচ্চ</option>
+            </select></div>
+          <div class="field"><label>পেজ লেআউট</label>
+            <select id="psm">
+              <option value="3" selected>অটো</option>
+              <option value="6">একটি ব্লক</option>
+              <option value="4">এক কলাম</option>
+            </select></div>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2><span class="num">৩</span> রূপান্তর</h2>
+    <div class="row">
+      <div class="field" style="max-width:200px"><label>একটি পেজ দেখুন (প্রিভিউ)</label><input type="number" id="pv" min="1" value="1"></div>
+      <button id="btnOne" class="ghost" disabled>শুধু এই পেজ দেখুন</button>
+      <button id="btnRun" disabled>পুরো রেঞ্জ রূপান্তর করুন</button>
+      <button id="btnStop" class="stop" disabled>থামান</button>
+    </div>
+    <div class="bar"><i id="barfill"></i></div>
+    <div id="status">ফাইল বাছুন</div>
+
+    <div class="tabs">
+      <button id="tabRaw" class="ghost">Markdown (কাঁচা)</button>
+      <button id="tabPrev" class="ghost">প্রিভিউ</button>
+      <button id="btnCopy" class="ghost" disabled>কপি করুন</button>
+      <button id="btnDl" disabled>.md ডাউনলোড</button>
+      <button id="btnZip" class="ghost" disabled>সব ফাইল ZIP</button>
+    </div>
+    <textarea id="out" placeholder="Markdown এখানে আসবে" spellcheck="false"></textarea>
+    <div id="prev"></div>
+
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>পেজ</th><th>পদ্ধতি</th><th>অক্ষর</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="3" class="muted">এখনো কিছু নেই</td></tr></tbody>
+      </table>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="btnClearOcr" class="ghost" disabled>OCR ক্যাশ মুছুন</button>
+      <button id="btnForget" class="ghost" disabled>PDF ও সব ডেটা মুছুন</button>
+    </div>
+  </section>
+</main>
+
+<footer>
+  টিপ: ডিজিটাল PDF (যেখানে মাউসে লেখা সিলেক্ট করা যায়) সবচেয়ে ভালো ফল দেয়। স্ক্যান করা পেজে OCR ব্যবহার হয়, সেখানে বাংলা যুক্তাক্ষর, গণিত ও গ্রিক অক্ষরে ভুল থাকতে পারে, তাই রূপান্তরের পর কয়েকটি পেজ মূল PDF-এর সাথে মিলিয়ে নিন। "প্রিভিউ" শুধু দেখার জন্য; নিজের গোছানো ফাইলের জন্য কাঁচা Markdown ডাউনলোড করুন।
+</footer>
+
+<script>
+'use strict';
+/*PURE-START*/
+/* ===== বিশুদ্ধ লজিক (DOM ছাড়া) — পরীক্ষা করা যায় ===== */
+const BN = '০১২৩৪৫৬৭৮৯';
+const toAscii = s => s.replace(/[০-৯]/g, d => String(BN.indexOf(d)));
+const median = a => { if (!a.length) return 0; const s = a.slice().sort((x, y) => x - y); return s[s.length >> 1]; };
+const THR = { low: [1.9, 1.5, 1.25], med: [1.7, 1.35, 1.15], high: [1.5, 1.25, 1.1] };
+const LIST_RE = /^[•●▪■◦‣⁃·\-–—*]\s+/;
+const NUM_RE = /^\(?([০-৯0-9]{1,3})[.)]\s+/;
+const cleanStr = s => s.normalize('NFC').replace(/[­﻿]/g, '').replace(/ /g, ' ');
+const escMd = t => t.replace(/([\\`*_\[\]<>|])/g, '\\$1');
+const normKey = s => toAscii(s).toLowerCase().replace(/\d+/g, '#').replace(/\s+/g, ' ').trim();
+
+function extractItems(tc, styles) {
+  const out = [];
+  for (const it of tc.items) {
+    const s = cleanStr(it.str || '');
+    if (!s.trim()) continue;
+    const t = it.transform || [1, 0, 0, 1, 0, 0];
+    const size = it.height || Math.hypot(t[0], t[1]) || 10;
+    const st = (styles && styles[it.fontName]) || {};
+    const name = ((st.fontFamily || '') + ' ' + (it.fontName || '')).toLowerCase();
+    out.push({
+      s, x: t[4], y: t[5], w: it.width || s.length * size * 0.5, size,
+      bold: /bold|black|heavy|semibold|demi/.test(name),
+      italic: /italic|oblique/.test(name)
+    });
+  }
+  return out;
+}
+
+function groupLines(items) {
+  const srt = items.slice().sort((a, b) => (b.y - a.y) || (a.x - b.x));
+  const groups = [];
+  for (const it of srt) {
+    const G = groups[groups.length - 1];
+    if (G && Math.abs(G.y0 - it.y) <= Math.max(1.5, it.size * 0.45)) G.items.push(it);
+    else groups.push({ y0: it.y, items: [it] });
+  }
+  return groups.map(G => {
+    const its = G.items.sort((a, b) => a.x - b.x);
+    const size = median(its.map(i => i.size));
+    const big = its.filter(i => i.size >= size * 0.95);
+    const base = median(big.map(i => i.y));
+    return { items: its, size, y: base, base };
+  });
+}
+
+function joinItems(items, med) {
+  let out = '', prevEnd = null;
+  for (const it of items) {
+    if (prevEnd !== null && it.x - prevEnd > med * 0.22 && out && !/\s$/.test(out) && !/^\s/.test(it.s)) out += ' ';
+    out += it.s;
+    prevEnd = it.x + it.w;
+  }
+  return out.replace(/\s+/g, ' ').trim();
+}
+
+function lineSpans(L, o) {
+  const spans = []; let prevEnd = null; const med = L.size;
+  for (const it of L.items) {
+    const small = it.size < med * 0.8;
+    const sup = !!o.supsub && small && it.y - L.base > med * 0.12;
+    const sub = !!o.supsub && small && L.base - it.y > med * 0.1;
+    let t = it.s;
+    if (prevEnd !== null && it.x - prevEnd > med * 0.22 && !/^\s/.test(t)) t = ' ' + t;
+    prevEnd = it.x + it.w;
+    const b = !!o.emph && it.bold, i = !!o.emph && it.italic;
+    const key = (b ? 'b' : '') + (i ? 'i' : '') + (sup ? '^' : '') + (sub ? '_' : '');
+    const last = spans[spans.length - 1];
+    if (last && last.key === key) last.t += t;
+    else spans.push({ t, key, b, i, sup, sub });
+  }
+  return spans;
+}
+
+function wrap(t, open, close) {
+  const m = t.match(/^(\s*)([\s\S]*?)(\s*)$/);
+  if (!m[2]) return t;
+  return m[1] + open + m[2] + close + m[3];
+}
+
+function renderSpans(spans) {
+  return spans.map(s => {
+    let t = escMd(s.t);
+    if (s.sup) t = wrap(t, '<sup>', '</sup>');
+    if (s.sub) t = wrap(t, '<sub>', '</sub>');
+    if (s.i) t = wrap(t, '*', '*');
+    if (s.b) t = wrap(t, '**', '**');
+    return t;
+  }).join('').replace(/\s+/g, ' ').trim();
+}
+
+function detectTwo(items, W) {
+  const n = items.length; if (n < 30) return false;
+  const mid = W / 2; let l = 0, r = 0, cross = 0;
+  for (const i of items) {
+    const c = i.x + i.w / 2;
+    if (c < mid) l++; else r++;
+    if (i.x < mid - 2 && i.x + i.w > mid + 2) cross++;
+  }
+  return l >= 0.3 * n && r >= 0.3 * n && cross <= 0.05 * n;
+}
+
+function pageLines(items, W, H, colMode) {
+  const two = colMode === 'two' || (colMode === 'auto' && detectTwo(items, W));
+  let lines;
+  if (two) {
+    const mid = W / 2;
+    const left = items.filter(i => i.x + i.w / 2 < mid), right = items.filter(i => i.x + i.w / 2 >= mid);
+    lines = groupLines(left).concat(groupLines(right));
+  } else lines = groupLines(items);
+  for (const L of lines) {
+    L.plain = joinItems(L.items, L.size);
+    L.margin = L.y > H * 0.9 || L.y < H * 0.1;
+  }
+  return lines.filter(L => L.plain);
+}
+
+function splitCells(L) {
+  const cells = []; let cur = null, prevEnd = null;
+  const gapMin = Math.max(L.size * 1.8, 10);
+  for (const it of L.items) {
+    if (cur && it.x - prevEnd > gapMin) { cells.push(cur); cur = null; }
+    if (!cur) cur = { x: it.x, items: [] };
+    cur.items.push(it);
+    prevEnd = it.x + it.w;
+  }
+  if (cur) cells.push(cur);
+  return cells.map(c => ({ x: c.x, t: joinItems(c.items, L.size) }));
+}
+function matchCells(a, b, size) {
+  if (a.length !== b.length) return false;
+  const tol = Math.max(size * 1.5, 6);
+  return a.every((c, k) => Math.abs(c.x - b[k].x) <= tol);
+}
+
+function joinLines(a, b, hyph) {
+  if (hyph && /[A-Za-z]-$/.test(a) && /^[a-z]/.test(b)) return a.slice(0, -1) + b;
+  return a + ' ' + b;
+}
+
+function linesToBlocks(lines, ctx) {
+  const o = ctx.o, out = [];
+  let prevY = null;
+  const skip = L => ctx.drop.has(normKey(L.plain)) ||
+    (o.pnum && L.margin && /^[-–—\s]*\d{1,4}[-–—\s]*$/.test(toAscii(L.plain)));
+  const kept = lines.filter(L => !skip(L));
+  let i = 0;
+  while (i < kept.length) {
+    const L = kept[i];
+    if (o.tables) {
+      const cells = splitCells(L);
+      if (cells.length >= 2 && !(o.lists && (LIST_RE.test(L.plain) || NUM_RE.test(L.plain)))) {
+        const run = [cells]; let j = i + 1;
+        while (j < kept.length) {
+          const c = splitCells(kept[j]);
+          if (!matchCells(cells, c, L.size)) break;
+          run.push(c); j++;
+        }
+        if (run.length >= 3) {
+          out.push({ type: 'table', rows: run.map(r => r.map(c => escMd(c.t))) });
+          prevY = kept[j - 1].y; i = j; continue;
+        }
+      }
+    }
+    const text = renderSpans(lineSpans(L, o));
+    if (!text) { i++; continue; }
+    const ratio = L.size / ctx.body, t = ctx.thr;
+    const lvl = ratio >= t[0] ? 1 : ratio >= t[1] ? 2 : ratio >= t[2] ? 3 : 0;
+    if (lvl && L.plain.length <= 180 && !(o.lists && LIST_RE.test(L.plain))) {
+      out.push({ type: 'h', lvl, text: escMd(L.plain) });
+      prevY = L.y; i++; continue;
+    }
+    const bm = o.lists ? L.plain.match(LIST_RE) : null;
+    const nm = o.lists ? L.plain.match(NUM_RE) : null;
+    if (bm) { out.push({ type: 'ul', text: escMd(L.plain.slice(bm[0].length)) }); prevY = L.y; i++; continue; }
+    if (nm) { out.push({ type: 'ol', n: toAscii(nm[1]), text: escMd(L.plain.slice(nm[0].length)) }); prevY = L.y; i++; continue; }
+    const gap = prevY == null ? 0 : prevY - L.y;
+    const last = out[out.length - 1];
+    const cont = prevY != null && gap <= ctx.body * 1.9 && last && (last.type === 'p' || last.type === 'ul' || last.type === 'ol');
+    if (cont) last.text = joinLines(last.text, text, o.hyph);
+    else out.push({ type: 'p', text });
+    prevY = L.y; i++;
+  }
+  return out;
+}
+
+function tableMd(rows) {
+  const n = Math.max(...rows.map(r => r.length));
+  const norm = rows.map(r => { const a = r.slice(); while (a.length < n) a.push(''); return a; });
+  const line = r => '| ' + r.join(' | ') + ' |';
+  return [line(norm[0]), '|' + ' --- |'.repeat(n), ...norm.slice(1).map(line)].join('\n');
+}
+
+function blocksToMd(blocks) {
+  let md = '', prev = null;
+  for (const b of blocks) {
+    let s;
+    if (b.type === 'h') s = '#'.repeat(b.lvl) + ' ' + b.text;
+    else if (b.type === 'p') s = b.text;
+    else if (b.type === 'ul') s = '- ' + b.text;
+    else if (b.type === 'ol') s = b.n + '. ' + b.text;
+    else s = tableMd(b.rows);
+    if (md) md += (b.type === prev && (b.type === 'ul' || b.type === 'ol')) ? '\n' : '\n\n';
+    md += s; prev = b.type;
+  }
+  return md;
+}
+
+function bodySize(linesArr) {
+  const m = new Map();
+  for (const lines of linesArr) for (const L of lines) for (const it of L.items) {
+    const k = Math.round(it.size * 2) / 2;
+    m.set(k, (m.get(k) || 0) + it.s.length);
+  }
+  let best = 10, bc = -1;
+  for (const [k, c] of m) if (c > bc) { bc = c; best = k; }
+  return best;
+}
+
+function findRepeated(pages) {
+  const cnt = new Map(); let tp = 0;
+  for (const p of pages) {
+    if (!p.lines || !p.lines.length) continue;
+    tp++;
+    const seen = new Set();
+    for (const L of p.lines) if (L.margin) {
+      const k = normKey(L.plain);
+      if (k && !seen.has(k)) { seen.add(k); cnt.set(k, (cnt.get(k) || 0) + 1); }
+    }
+  }
+  const drop = new Set();
+  if (tp < 4) return drop;
+  for (const [k, c] of cnt) if (c >= Math.max(3, tp * 0.4)) drop.add(k);
+  return drop;
+}
+
+function ocrToMd(text, o) {
+  const paras = text.split(/\n\s*\n/)
+    .map(p => p.split('\n').map(s => s.trim()).filter(Boolean)).filter(a => a.length);
+  const blocks = [];
+  for (const lines of paras) {
+    let cur = null;
+    for (const ln of lines) {
+      const bm = o.lists ? ln.match(LIST_RE) : null;
+      const nm = o.lists ? ln.match(NUM_RE) : null;
+      if (bm) { blocks.push({ type: 'ul', text: escMd(ln.slice(bm[0].length)) }); cur = null; continue; }
+      if (nm) { blocks.push({ type: 'ol', n: toAscii(nm[1]), text: escMd(ln.slice(nm[0].length)) }); cur = null; continue; }
+      if (cur) cur.text = joinLines(cur.text, escMd(ln), o.hyph);
+      else { cur = { type: 'p', text: escMd(ln) }; blocks.push(cur); }
+    }
+  }
+  return blocksToMd(blocks);
+}
+/*PURE-END*/
+
+/* ===================== DOM / IO ===================== */
+const $ = s => document.querySelector(s);
+const bn = n => String(n).replace(/\d/g, d => '০১২৩৪৫৬৭৮৯'[d]);
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+let file = null, pdf = null, total = 0, objUrl = null;
+let busy = false, stopFlag = false, wakeLock = null;
+let ocrWorker = null, ocrCfg = '';
+let lastOut = '', lastGroups = [];
+const PREF_KEY = 'pdf2md-prefs-v1';
+const PREF_IDS = ['sep', 'prefix', 'fm', 'bom', 'chunk', 'engine', 'columns', 'sens', 'digits',
+  'hf', 'pnum', 'hyph', 'tables', 'lists', 'emph', 'supsub', 'lang', 'quality', 'scale', 'psm'];
+
+function setStatus(t) { $('#status').textContent = t; }
+function setBar(f) { $('#barfill').style.width = Math.max(0, Math.min(100, f * 100)) + '%'; }
+function saveBlob(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+const fkey = () => file.name + '|' + file.size + '|' + file.lastModified + '|';
+
+/* ---------- IndexedDB: ফাইল ও OCR ক্যাশ ---------- */
+const Store = {
+  db: null, ok: false, mem: {}, memFile: null,
+  open() {
+    return new Promise(res => {
+      try {
+        const r = indexedDB.open('pdf2md-store', 1);
+        r.onupgradeneeded = () => {
+          const db = r.result;
+          if (!db.objectStoreNames.contains('files')) db.createObjectStore('files');
+          if (!db.objectStoreNames.contains('ocr')) db.createObjectStore('ocr');
+        };
+        r.onsuccess = () => { Store.db = r.result; Store.db.onversionchange = () => Store.db.close(); Store.ok = true; res(true); };
+        r.onerror = () => res(false);
+      } catch (e) { res(false); }
+    });
+  },
+  run(store, mode, fn) {
+    return new Promise((res, rej) => {
+      const tx = Store.db.transaction(store, mode);
+      let out;
+      const r = fn(tx.objectStore(store));
+      if (r) r.onsuccess = () => { out = r.result; };
+      tx.oncomplete = () => res(out);
+      tx.onerror = tx.onabort = () => rej(tx.error || new Error('ডেটাবেস ত্রুটি'));
+    });
+  },
+  getOcr(k) { return Store.ok ? Store.run('ocr', 'readonly', os => os.get(k)) : Promise.resolve(Store.mem[k]); },
+  putOcr(k, v) {
+    if (!Store.ok) { Store.mem[k] = v; return Promise.resolve(); }
+    return Store.run('ocr', 'readwrite', os => os.put(v, k)).catch(() => { Store.mem[k] = v; });
+  },
+  delOcr(prefix) {
+    for (const k in Store.mem) if (k.startsWith(prefix)) delete Store.mem[k];
+    if (!Store.ok) return Promise.resolve();
+    return Store.run('ocr', 'readwrite', os => os.delete(IDBKeyRange.bound(prefix, prefix + '￿')));
+  },
+  saveFile(f) {
+    const rec = { name: f.name, size: f.size, type: f.type, lastModified: f.lastModified, blob: f };
+    if (!Store.ok) { Store.memFile = rec; return Promise.resolve(); }
+    return Store.run('files', 'readwrite', os => os.put(rec, 'current'));
+  },
+  getFile() { return Store.ok ? Store.run('files', 'readonly', os => os.get('current')) : Promise.resolve(Store.memFile); },
+  delFile() {
+    Store.memFile = null;
+    return Store.ok ? Store.run('files', 'readwrite', os => os.delete('current')) : Promise.resolve();
+  }
+};
+const storeReady = Store.open().then(ok => {
+  if (!ok) setStatus('সতর্কতা: স্থায়ী সংরক্ষণ চালু হয়নি (প্রাইভেট মোড হতে পারে)। ট্যাব বন্ধ করলে ফাইল হারাবে।');
+  return ok;
+});
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+
+/* ---------- সেটিং ---------- */
+function readOpts() {
+  const v = id => $('#' + id).value, c = id => $('#' + id).checked;
+  return {
+    from: parseInt(v('from')) || 1, to: parseInt(v('to')) || 1,
+    chunk: Math.max(0, parseInt(v('chunk')) || 0), sep: v('sep'), fm: c('fm'), bom: c('bom'),
+    prefix: v('prefix').trim(), engine: v('engine'), columns: v('columns'), sens: v('sens'),
+    digits: v('digits'), hf: c('hf'), pnum: c('pnum'), hyph: c('hyph'), tables: c('tables'),
+    lists: c('lists'), emph: c('emph'), supsub: c('supsub'),
+    lang: v('lang'), quality: v('quality'), scale: +v('scale'), psm: v('psm')
+  };
+}
+function savePrefs() {
+  const o = {};
+  PREF_IDS.forEach(id => { const el = document.getElementById(id); if (el) o[id] = el.type === 'checkbox' ? el.checked : el.value; });
+  try { localStorage.setItem(PREF_KEY, JSON.stringify(o)); } catch (e) {}
+}
+function loadPrefs() {
+  try {
+    const o = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
+    PREF_IDS.forEach(id => {
+      const el = document.getElementById(id);
+      if (el && id in o) { if (el.type === 'checkbox') el.checked = !!o[id]; else el.value = o[id]; }
+    });
+  } catch (e) {}
+}
+
+/* ---------- ফাইল ---------- */
+const drop = $('#drop');
+drop.addEventListener('click', () => $('#file').click());
+['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('on'); }));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('on'); }));
+drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) openFile(f, true); });
+$('#file').addEventListener('change', e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (f) openFile(f, true);
+});
+
+async function openFile(f, isNew) {
+  if (busy) { setStatus('আগের কাজ শেষ হওয়ার পর ফাইল বদলান।'); return; }
+  if (!/pdf$/i.test(f.type) && !/\.pdf$/i.test(f.name)) { setStatus('শুধু PDF ফাইল বাছুন।'); return; }
+  setStatus(isNew ? 'PDF খোলা হচ্ছে…' : 'আগের PDF ফিরিয়ে আনা হচ্ছে…');
+  try {
+    if (pdf) { try { await pdf.destroy(); } catch (e) {} }
+    if (objUrl) URL.revokeObjectURL(objUrl);
+    file = f;
+    objUrl = URL.createObjectURL(f);
+    pdf = await pdfjsLib.getDocument({ url: objUrl }).promise;
+    total = pdf.numPages;
+    $('#fileinfo').textContent = f.name + ' — ' + (f.size / 1048576).toFixed(1) + ' MB, ' + bn(total) + ' পেজ';
+    $('#from').value = 1; $('#to').value = total; $('#from').max = total; $('#to').max = total;
+    $('#pv').max = total; $('#pv').value = 1;
+    const ok = await storeReady;
+    let stored = false;
+    if (isNew && ok) { try { await Store.saveFile(f); stored = true; } catch (e) { console.error(e); } }
+    setStatus(!ok ? 'সতর্কতা: ব্রাউজারে স্থায়ী সংরক্ষণ নেই।'
+      : (isNew && !stored) ? 'সতর্কতা: ফাইল সেভ করা যায়নি — ব্রাউজারের জায়গা শেষ হতে পারে।'
+      : 'PDF প্রস্তুত। পেজ ঠিক করে রূপান্তর করুন।');
+    setBtns(false);
+  } catch (e) {
+    console.error(e);
+    setStatus('PDF খুলতে সমস্যা: ' + e.message);
+  }
+}
+async function restoreSaved() {
+  try {
+    await storeReady;
+    const rec = await Store.getFile();
+    if (!rec || !rec.blob) return;
+    await openFile(new File([rec.blob], rec.name, { type: rec.type || 'application/pdf', lastModified: rec.lastModified }), false);
+  } catch (e) { console.error(e); setStatus('আগের ফাইল পড়া যায়নি: ' + e.message); }
+}
+
+/* ---------- পেজ বিশ্লেষণ ---------- */
+async function analyze(n) {
+  const pg = await pdf.getPage(n);
+  const vp = pg.getViewport({ scale: 1 });
+  const tc = await pg.getTextContent();
+  pg.cleanup();
+  const items = extractItems(tc, tc.styles);
+  const chars = items.reduce((a, i) => a + i.s.length, 0);
+  return { n, W: vp.width, H: vp.height, items, chars, scanned: chars < 25, done: false };
+}
+
+async function renderPage(n, scale) {
+  const page = await pdf.getPage(n);
+  let vp = page.getViewport({ scale });
+  const m = Math.max(vp.width, vp.height);
+  if (m > 4200) vp = page.getViewport({ scale: scale * 4200 / m });
+  const c = document.createElement('canvas');
+  c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+  page.cleanup();
+  return c;
+}
+function binarize(c) {
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  const img = ctx.getImageData(0, 0, c.width, c.height), d = img.data, n = c.width * c.height;
+  const g = new Uint8Array(n), h = new Uint32Array(256);
+  for (let i = 0, p = 0; i < n; i++, p += 4) { g[i] = (0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2]) | 0; h[g[i]]++; }
+  let sum = 0; for (let v = 0; v < 256; v++) sum += v * h[v];
+  let sB = 0, wB = 0, best = 0, T = 128;
+  for (let v = 0; v < 256; v++) {
+    wB += h[v]; if (!wB) continue;
+    const wF = n - wB; if (!wF) break;
+    sB += v * h[v];
+    const mB = sB / wB, mF = (sum - sB) / wF, bt = wB * wF * (mB - mF) * (mB - mF);
+    if (bt > best) { best = bt; T = v; }
+  }
+  for (let i = 0, p = 0; i < n; i++, p += 4) { const v = g[i] > T ? 255 : 0; d[p] = d[p + 1] = d[p + 2] = v; d[p + 3] = 255; }
+  ctx.putImageData(img, 0, 0);
+}
+async function getOcr(o) {
+  const cfg = [o.lang, o.quality, o.psm].join('|');
+  if (ocrWorker && ocrCfg === cfg) return ocrWorker;
+  if (ocrWorker) { try { await ocrWorker.terminate(); } catch (e) {} ocrWorker = null; }
+  const opts = { logger: m => { if (m.status && /loading|initializ/i.test(m.status)) setStatus('OCR ইঞ্জিন লোড হচ্ছে: ' + Math.round((m.progress || 0) * 100) + '%'); } };
+  if (o.quality === 'best') opts.langPath = 'https://cdn.jsdelivr.net/gh/naptha/tessdata@gh-pages/4.0.0_best';
+  ocrWorker = await Tesseract.createWorker(o.lang, 1, opts);
+  await ocrWorker.setParameters({ tessedit_pageseg_mode: String(o.psm), preserve_interword_spaces: '1', user_defined_dpi: '300' });
+  ocrCfg = cfg;
+  return ocrWorker;
+}
+async function ocrPage(n, o) {
+  const k = fkey() + [o.lang, o.quality, o.scale, o.psm, n].join('|');
+  const cached = await Store.getOcr(k);
+  if (typeof cached === 'string') return cached;
+  const w = await getOcr(o);
+  const c = await renderPage(n, o.scale);
+  binarize(c);
+  const r = await w.recognize(c);
+  c.width = c.height = 0;
+  const text = r.data.text || '';
+  await Store.putOcr(k, text);
+  return text;
+}
+
+/* ---------- মূল রূপান্তর ---------- */
+async function convert(nums, o) {
+  const pages = [];
+  for (let k = 0; k < nums.length && !stopFlag; k++) {
+    setBar(0.3 * k / nums.length);
+    setStatus('পেজ ' + bn(nums[k]) + ' পড়া হচ্ছে… (' + bn(k + 1) + '/' + bn(nums.length) + ')');
+    pages.push(await analyze(nums[k]));
+  }
+  const needOcr = p => o.engine === 'ocr' || (o.engine === 'auto' && p.scanned);
+  for (const p of pages) if (!needOcr(p) && !p.scanned) p.lines = pageLines(p.items, p.W, p.H, o.columns);
+  const textPages = pages.filter(p => p.lines);
+  const ctx = {
+    body: bodySize(textPages.map(p => p.lines)), thr: THR[o.sens] || THR.med, o,
+    drop: o.hf ? findRepeated(textPages) : new Set()
+  };
+  const ocrCount = pages.filter(needOcr).length;
+  let ocrDone = 0;
+  for (const p of pages) {
+    if (stopFlag) break;
+    if (needOcr(p)) {
+      ocrDone++;
+      setStatus('OCR চলছে: পেজ ' + bn(p.n) + ' (' + bn(ocrDone) + '/' + bn(ocrCount) + ')');
+      setBar(0.3 + 0.7 * ocrDone / Math.max(1, ocrCount));
+      const text = await ocrPage(p.n, o);
+      p.md = ocrToMd(text, o); p.method = 'OCR'; p.chars = text.length;
+    } else if (p.lines) {
+      p.md = blocksToMd(linesToBlocks(p.lines, ctx)); p.method = 'টেক্সট'; p.chars = p.items.reduce((a, i) => a + i.s.length, 0);
+    } else {
+      p.md = '<!-- পেজ ' + p.n + ': লেখা পাওয়া যায়নি (স্ক্যান হতে পারে) -->'; p.method = 'খালি'; p.chars = 0;
+    }
+    p.done = true;
+  }
+  return pages.filter(p => p.done);
+}
+
+function assemble(pages, o) {
+  const sepFor = n => o.sep === 'comment' ? '<!-- পৃষ্ঠা ' + n + ' -->'
+    : o.sep === 'heading' ? '## পৃষ্ঠা ' + n
+    : o.sep === 'hr' ? '---' : '';
+  const body = pages.map(p => { const sp = sepFor(p.n); return (sp ? sp + '\n\n' : '') + p.md; }).join('\n\n');
+  let fm = '';
+  if (o.fm && pages.length) {
+    const title = (o.prefix || file.name.replace(/\.pdf$/i, '')).replace(/"/g, '\\"');
+    fm = '---\ntitle: "' + title + '"\nsource: "' + file.name.replace(/"/g, '\\"') + '"\npages: "' +
+      pages[0].n + '-' + pages[pages.length - 1].n + '"\nconverted: "' + new Date().toISOString().slice(0, 10) + '"\n---\n\n';
+  }
+  const md = fm + body + '\n';
+  return o.digits === 'en' ? toAscii(md) : md;
+}
+function baseName(o) { return (o.prefix || file.name.replace(/\.pdf$/i, '')).replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_'); }
+
+function renderResults(pages) {
+  const tb = $('#rows');
+  tb.innerHTML = '';
+  if (!pages.length) { tb.innerHTML = '<tr><td colspan="3" class="muted">কোনো পেজ নেই</td></tr>'; return; }
+  for (const p of pages) {
+    const tr = document.createElement('tr');
+    const cls = p.method === 'OCR' ? 'ocr' : p.method === 'খালি' ? 'empty' : 'ok';
+    tr.innerHTML = '<td>' + bn(p.n) + '</td><td><span class="pill ' + cls + '">' + p.method + '</span></td><td>' + bn(p.chars) + '</td>';
+    tb.appendChild(tr);
+  }
+}
+
+function showOutput(text) {
+  $('#out').value = text;
+  if (window.marked) $('#prev').innerHTML = marked.parse(text);
+  else $('#prev').textContent = text;
+}
+
+async function keepAwake(on) {
+  try {
+    if (on && 'wakeLock' in navigator && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!on && wakeLock) { const w = wakeLock; wakeLock = null; await w.release(); }
+  } catch (e) { wakeLock = null; }
+}
+document.addEventListener('visibilitychange', () => { if (busy && document.visibilityState === 'visible') keepAwake(true); });
+
+function setBtns(on) {
+  const idle = !on && !!pdf;
+  $('#btnRun').disabled = !idle;
+  $('#btnOne').disabled = !idle;
+  $('#btnStop').disabled = !on;
+  $('#btnForget').disabled = !idle;
+  $('#btnClearOcr').disabled = on || !pdf;
+  $('#btnCopy').disabled = on || !lastOut;
+  $('#btnDl').disabled = on || !lastOut;
+  $('#btnZip').disabled = on || lastGroups.length < 2;
+  keepAwake(on);
+}
+
+/* ---------- বাটন ---------- */
+function rangeOf(o) {
+  let a = Math.max(1, o.from), b = Math.min(total, o.to);
+  if (a > b) a = b;
+  const r = []; for (let n = a; n <= b; n++) r.push(n);
+  return r;
+}
+async function runJob(nums, single) {
+  if (busy || !pdf) return;
+  busy = true; stopFlag = false; setBtns(true);
+  try {
+    const o = readOpts();
+    savePrefs();
+    const pages = await convert(nums, o);
+    renderResults(pages);
+    lastGroups = [];
+    let text;
+    if (single || o.chunk <= 0) {
+      const md = assemble(pages, o);
+      lastGroups = single ? [] : [{ name: baseName(o) + '_p' + pages[0].n + '-' + pages[pages.length - 1].n + '.md', md }];
+      text = md;
+    } else {
+      const groups = [];
+      for (let k = 0; k < pages.length; k += o.chunk) {
+        const part = pages.slice(k, k + o.chunk);
+        groups.push({ name: baseName(o) + '_p' + part[0].n + '-' + part[part.length - 1].n + '.md', md: assemble(part, o) });
+      }
+      lastGroups = groups;
+      text = groups.map(g => '<!-- ===== ফাইল: ' + g.name + ' ===== -->\n\n' + g.md).join('\n');
+    }
+    lastOut = text;
+    showOutput(text);
+    setBar(1);
+    setStatus(stopFlag ? 'থামানো হয়েছে। এ পর্যন্ত রূপান্তর হওয়া পেজ দেখানো হচ্ছে।' : 'শেষ হয়েছে (' + bn(pages.length) + ' পেজ)। নিচে দেখুন ও ডাউনলোড করুন।');
+  } catch (e) {
+    console.error(e);
+    setStatus('সমস্যা: ' + e.message + ' — OCR সেটিং বা ইন্টারনেট সংযোগ দেখুন।');
+  }
+  busy = false; setBtns(false);
+}
+$('#btnRun').onclick = () => { if (pdf) runJob(rangeOf(readOpts()), false); };
+$('#btnOne').onclick = () => {
+  const n = Math.max(1, Math.min(total, parseInt($('#pv').value) || 1));
+  runJob([n], true);
+};
+$('#btnStop').onclick = () => { stopFlag = true; setStatus('থামানো হচ্ছে (চলমান পেজ শেষ হলে)…'); };
+$('#tabRaw').onclick = () => { $('#out').hidden = false; $('#prev').style.display = 'none'; };
+$('#tabPrev').onclick = () => {
+  $('#out').hidden = true; $('#prev').style.display = 'block';
+  if (lastOut) showOutput(lastOut);
+};
+$('#btnCopy').onclick = async () => {
+  try { await navigator.clipboard.writeText(lastOut); setStatus('কপি হয়েছে।'); }
+  catch (e) { $('#out').select(); document.execCommand('copy'); setStatus('কপি হয়েছে।'); }
+};
+$('#btnDl').onclick = () => {
+  if (!lastOut) return;
+  const o = readOpts();
+  const name = lastGroups.length === 1 ? lastGroups[0].name : baseName(o) + '.md';
+  saveBlob(new Blob([(o.bom ? '﻿' : '') + (lastGroups.length === 1 ? lastGroups[0].md : lastOut)], { type: 'text/markdown;charset=utf-8' }), name);
+};
+$('#btnZip').onclick = async () => {
+  if (lastGroups.length < 2) return;
+  const o = readOpts();
+  const zip = new JSZip();
+  lastGroups.forEach(g => zip.file(g.name, (o.bom ? '﻿' : '') + g.md));
+  saveBlob(await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }), baseName(o) + '_markdown.zip');
+  setStatus(bn(lastGroups.length) + 'টি Markdown ফাইল ZIP করে নামানো হয়েছে।');
+};
+$('#btnClearOcr').onclick = async () => {
+  if (busy || !file) return;
+  if (!confirm('এই PDF-এর OCR ক্যাশ মুছে যাবে। নিশ্চিত?')) return;
+  try { await Store.delOcr(fkey()); } catch (e) { console.error(e); }
+  setStatus('OCR ক্যাশ মুছে ফেলা হয়েছে।');
+};
+$('#btnForget').onclick = async () => {
+  if (busy || !file) return;
+  if (!confirm('PDF, OCR ক্যাশ ও এর আউটপুট ব্রাউজার থেকে মুছে যাবে। নিশ্চিত?')) return;
+  try { await Store.delOcr(fkey()); await Store.delFile(); } catch (e) { console.error(e); }
+  if (pdf) { try { await pdf.destroy(); } catch (e) {} }
+  if (objUrl) URL.revokeObjectURL(objUrl);
+  pdf = null; file = null; objUrl = null; total = 0; lastOut = ''; lastGroups = [];
+  $('#fileinfo').textContent = 'এখনো কোনো ফাইল বাছা হয়নি';
+  $('#out').value = ''; $('#prev').innerHTML = ''; $('#rows').innerHTML = '<tr><td colspan="3" class="muted">এখনো কিছু নেই</td></tr>';
+  setBar(0); setBtns(false);
+  setStatus('PDF ও সব ডেটা মুছে ফেলা হয়েছে।');
+};
+window.addEventListener('beforeunload', e => { if (busy) { e.preventDefault(); e.returnValue = ''; } });
+
+/* ---------- শুরু ---------- */
+loadPrefs();
+PREF_IDS.forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('change', savePrefs);
+  el.addEventListener('input', savePrefs);
+});
+setBtns(false);
+restoreSaved();
+</script>
+</body>
+</html>
